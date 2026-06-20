@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Agent AuditFlow – Parallel Expert Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+
+    <header>
+        Multi-Agent AuditFlow <span class="header-subtitle">– Parallel Expert Analysis</span>
+    </header>
+
+    <main>
+        <!-- Background floating orbs -->
+        <div class="bg-shape bg-shape-1"></div>
+        <div class="bg-shape bg-shape-2"></div>
+
+        <div id="left-panel">
+            <div class="left-panel-header">
+                <div id="agent-legend" class="legend-container" style="display: none;"></div>
+            </div>
+            <div id="document-content"></div>
+        </div>
+
+        <div id="right-panel">
+            <div id="drop-zone">
+                <div class="upload-icon">
+                    <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                </div>
+                <h3 class="drop-title">Upload Document</h3>
+                <p class="drop-subtitle">Drag & drop a dense PDF lease or contract here to begin the multi-agent audit.</p>
+                <input type="file" id="file-input" accept=".pdf" />
+            </div>
+
+            <!-- Features Grid (Visible only before upload) -->
+            <div class="features-grid" id="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚖️</div>
+                    <h4>Legal Analysis</h4>
+                    <p>Detects hidden clauses, compliance risks, and liabilities instantly.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💰</div>
+                    <h4>Financial Risk</h4>
+                    <p>Evaluates monetary obligations, penalties, and hidden costs.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚙️</div>
+                    <h4>Operations</h4>
+                    <p>Identifies maintenance burdens and operational bottlenecks.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h4>Conflict Resolution</h4>
+                    <p>Chief Auditor agent synthesizes reports and flags cross-domain conflicts.</p>
+                </div>
+            </div>
+
+            <div id="controls">
+                <button id="dispatch-btn" class="primary">Dispatch Parallel Agents</button>
+                <button id="download-btn" class="secondary" style="display: none;">Download PDF Report</button>
+            </div>
+
+            <div id="feed"></div>
+        </div>
+        
+        <div id="insight-tooltip" class="insight-tooltip"></div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="app.js?v=6" defer></script>
+</body>
+</html>
