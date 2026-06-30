@@ -2,6 +2,7 @@
 import os
 import json
 import asyncio
+from pydantic import BaseModel
 # pyrefly: ignore [missing-import]
 from fastapi import FastAPI, File, UploadFile
 # pyrefly: ignore [missing-import]
@@ -18,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # If no API key found in current env, try loading parent .env (project root)
-if not (os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")):
+if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")):
     parent_env = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
     if os.path.exists(parent_env):
         load_dotenv(parent_env, override=False)
@@ -57,21 +58,6 @@ async def root():
 
 current_document_context = []
 
-# Synchronous client wrapper for Groq via OpenAI library
-# Prefer OPENAI_API_KEY when both keys exist. Fall back to GROQ if only GROQ is set.
-openai_key = os.getenv("OPENAI_API_KEY")
-groq_key = os.getenv("GROQ_API_KEY")
-selected_api_key = openai_key or groq_key
-if not selected_api_key:
-    raise RuntimeError("No API key found. Set OPENAI_API_KEY or GROQ_API_KEY in your environment or .env file.")
-
-if openai_key:
-    openai_client = OpenAI(api_key=openai_key, base_url="https://api.openai.com/v1")
-    provider_name = "OpenAI"
-else:
-    openai_client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
-    provider_name = "Groq"
-
 # --- LLM CALLABLES ---
 
 import time
@@ -92,34 +78,57 @@ def retry_llm(func):
         raise Exception("API Rate Limit Exhausted after retries.")
     return wrapper
 
-@retry_llm
-def call_openai_aggregator(prompt: str) -> str:
-    """Callable for the Central Aggregator (The Reduce Phase)."""
-    model_name = os.getenv("LLM_MODEL", "gpt-4o")
-    response = openai_client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {"role": "system", "content": "You are the Chief Justice. Analyze the reports and output a structured JSON conflict audit."},
-            {"role": "user", "content": prompt}
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.1
-    )
-    return response.choices[0].message.content
+def make_llm_callables(api_key: str):
+    provider_name = "Unknown"
+    client = None
+    
+    if api_key:
+        if api_key.startswith("AIza"):
+            client = OpenAI(api_key=api_key, base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+            provider_name = "Google Gemini"
+            os.environ["LLM_MODEL"] = "gemini-2.5-flash"
+        elif api_key.startswith("gsk_"):
+            client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+            provider_name = "Groq"
+            os.environ["LLM_MODEL"] = "llama3-70b-8192"
+        elif api_key.startswith("sk-or-"):
+            client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
+            provider_name = "OpenRouter"
+            os.environ["LLM_MODEL"] = "anthropic/claude-3-haiku" # Default lightweight OpenRouter model
+        else: 
+            client = OpenAI(api_key=api_key, base_url="https://api.openai.com/v1")
+            provider_name = "OpenAI"
+            os.environ["LLM_MODEL"] = "gpt-4o"
 
-@retry_llm
-def call_openai_agent(prompt: str) -> str:
-    """Callable for the Isolated Specialists (The Map Phase)."""
-    model_name = os.getenv("LLM_MODEL", "gpt-4o")
-    response = openai_client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.1
-    )
-    return response.choices[0].message.content
+    if not client:
+        raise RuntimeError("No API key provided. Please enter an API key in the UI.")
+
+    @retry_llm
+    def call_agent(prompt: str) -> str:
+        model_name = os.getenv("LLM_MODEL", "gpt-4o")
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.1
+        )
+        return response.choices[0].message.content
+
+    @retry_llm
+    def call_aggregator(prompt: str) -> str:
+        model_name = os.getenv("LLM_MODEL", "gpt-4o")
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are the Chief Justice. Analyze the reports and output a structured JSON conflict audit."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1
+        )
+        return response.choices[0].message.content
+        
+    return provider_name, call_agent, call_aggregator
 
 
 # --- AGENT WRAPPERS ---
@@ -157,6 +166,26 @@ class ExpertAgent(Agent):
 
 
 # --- API ROUTES ---
+class KeyValidationRequest(BaseModel):
+    provider: str
+    api_key: str
+
+@app.post("/api/validate_key")
+async def validate_api_key(req: KeyValidationRequest):
+    try:
+        # Temporarily use the key to initialize a client
+        provider_name, call_agent, _ = make_llm_callables(req.api_key)
+        
+        # Test connection with a tiny request
+        response = call_agent("Reply with 'OK'")
+        
+        if response:
+            return {"status": "success", "message": f"Successfully connected to {provider_name}"}
+        else:
+            return {"status": "error", "message": "Received empty response from provider."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/upload")
 async def upload_document(file: UploadFile = File(...)):
     global current_document_context
@@ -168,8 +197,16 @@ async def upload_document(file: UploadFile = File(...)):
     return {"status": "success", "sentences": sentence_objects}
 
 
-async def run_octochains_stream():
+async def run_octochains_stream(api_key: str = ""):
     global current_document_context
+    
+    try:
+        provider_name, call_agent, call_aggregator = make_llm_callables(api_key)
+    except Exception as e:
+        yield f"data: {json.dumps({'status': 'agent_report', 'data': {'agent': 'System', 'color': '#FF0000', 'insight': str(e)}})}\n\n"
+        yield f"data: {json.dumps({'status': 'complete'})}\n\n"
+        return
+
     yield f"data: {json.dumps({'status': 'engine_started', 'message': f'Booting thread-isolated experts via {provider_name}...'})}\n\n"
     
     # 1. Initialize Agents with the OpenAI callable
@@ -178,21 +215,21 @@ async def run_octochains_stream():
         goal="Identify financial risks and liabilities.",
         color="#FFD54D",
         system_prompt=FINANCE_PROMPT,
-        llm_callable=call_openai_agent
+        llm_callable=call_agent
     )
     legal = ExpertAgent(
         role="Legal Agent",
         goal="Identify legal traps and governance limitations.",
         color="#00BEBE",
         system_prompt=LEGAL_PROMPT,
-        llm_callable=call_openai_agent
+        llm_callable=call_agent
     )
     ops = ExpertAgent(
         role="Operations Agent",
         goal="Identify operational bottlenecks and maintenance burdens.",
         color="#00A15E",
         system_prompt=OPS_PROMPT,
-        llm_callable=call_openai_agent
+        llm_callable=call_agent
     )
     
     agents = [finance, legal, ops]
@@ -200,7 +237,7 @@ async def run_octochains_stream():
     
     # 2. Instantiate the Native Aggregator
     boss = ConflictChecker(
-        llm_callable=call_openai_aggregator, 
+        llm_callable=call_aggregator, 
         pairwise_audit=True,
         custom_goal=LEASE_DUE_DILIGENCE_GOAL,
         max_threads=3,
@@ -247,8 +284,8 @@ async def run_octochains_stream():
 
 
 @app.get("/api/analyze")
-async def analyze_document():
-    return StreamingResponse(run_octochains_stream(), media_type="text/event-stream")
+async def analyze_document(api_key: str = ""):
+    return StreamingResponse(run_octochains_stream(api_key), media_type="text/event-stream")
 
 
 if __name__ == "__main__":

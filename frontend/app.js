@@ -26,6 +26,133 @@ const hexToRgb = (hex) => {
     return `${r}, ${g}, ${b}`;
 };
 
+// --- API Key Modal Logic ---
+const apiKeyModal = document.getElementById('api-key-modal');
+const modalApiKeyInput = document.getElementById('modal-api-key-input');
+const providerSelect = document.getElementById('provider-select');
+const modalSaveBtn = document.getElementById('modal-save-btn');
+const testConnectionBtn = document.getElementById('test-connection-btn');
+const demoModeBtn = document.getElementById('demo-mode-btn');
+const rememberKeyCheckbox = document.getElementById('remember-key-checkbox');
+const validationMessage = document.getElementById('validation-message');
+const toggleVisibilityBtn = document.getElementById('toggle-key-visibility');
+const toastContainer = document.getElementById('toast-container');
+
+let savedApiKey = localStorage.getItem('auditflow_api_key') || sessionStorage.getItem('auditflow_api_key');
+
+if (savedApiKey) {
+    apiKeyModal.style.display = 'none';
+} else {
+    // The CSS defaults to display: flex; but let's be explicit
+    apiKeyModal.style.display = 'flex';
+}
+
+// Toggle password visibility
+toggleVisibilityBtn.addEventListener('click', () => {
+    if (modalApiKeyInput.type === 'password') {
+        modalApiKeyInput.type = 'text';
+    } else {
+        modalApiKeyInput.type = 'password';
+    }
+});
+
+// Toast Helper
+function showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `✅ ${message}`;
+    toastContainer.appendChild(toast);
+    
+    // Remove from DOM after animation completes
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+    }, 3500);
+}
+
+// Validation API call
+async function validateKey(provider, key) {
+    try {
+        const response = await fetch('http://localhost:8000/api/validate_key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: provider, api_key: key })
+        });
+        return await response.json();
+    } catch (error) {
+        return { status: 'error', message: 'Failed to reach backend server.' };
+    }
+}
+
+testConnectionBtn.addEventListener('click', async () => {
+    const key = modalApiKeyInput.value.trim();
+    if (!key) {
+        validationMessage.className = 'validation-message error';
+        validationMessage.innerText = 'Please enter an API Key to test.';
+        return;
+    }
+    
+    testConnectionBtn.disabled = true;
+    testConnectionBtn.innerText = 'Testing...';
+    validationMessage.style.display = 'none';
+    
+    const result = await validateKey(providerSelect.value, key);
+    
+    validationMessage.style.display = 'block';
+    if (result.status === 'success') {
+        validationMessage.className = 'validation-message success';
+        validationMessage.innerText = 'Connection successful!';
+    } else {
+        validationMessage.className = 'validation-message error';
+        validationMessage.innerText = result.message || 'Validation failed.';
+    }
+    
+    testConnectionBtn.disabled = false;
+    testConnectionBtn.innerText = 'Test Connection';
+});
+
+modalSaveBtn.addEventListener('click', async () => {
+    const key = modalApiKeyInput.value.trim();
+    if (!key) {
+        validationMessage.style.display = 'block';
+        validationMessage.className = 'validation-message error';
+        validationMessage.innerText = 'Please enter a valid API Key.';
+        return;
+    }
+
+    modalSaveBtn.disabled = true;
+    modalSaveBtn.innerText = 'Validating...';
+    
+    const result = await validateKey(providerSelect.value, key);
+    
+    if (result.status === 'success') {
+        if (rememberKeyCheckbox.checked) {
+            localStorage.setItem('auditflow_api_key', key);
+            sessionStorage.removeItem('auditflow_api_key');
+        } else {
+            sessionStorage.setItem('auditflow_api_key', key);
+            localStorage.removeItem('auditflow_api_key');
+        }
+        savedApiKey = key;
+        apiKeyModal.style.display = 'none';
+        showToast('API Connected Successfully');
+    } else {
+        validationMessage.style.display = 'block';
+        validationMessage.className = 'validation-message error';
+        validationMessage.innerText = result.message || 'Validation failed.';
+    }
+    
+    modalSaveBtn.disabled = false;
+    modalSaveBtn.innerText = 'Save & Continue';
+});
+
+demoModeBtn.addEventListener('click', () => {
+    savedApiKey = ''; // Uses backend fallback (.env)
+    apiKeyModal.style.display = 'none';
+    showToast('Demo Mode Enabled');
+});
+
 // --- Drag and Drop Logic ---
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -84,7 +211,17 @@ dispatchBtn.addEventListener('click', () => {
     globalSentenceState = {};
     activeAgentFilters = {};
 
-    const eventSource = new EventSource('http://localhost:8000/api/analyze');
+    savedApiKey = localStorage.getItem('auditflow_api_key') || sessionStorage.getItem('auditflow_api_key') || '';
+
+    // If no key is saved, and we aren't in explicitly "Demo Mode", pop modal
+    if (!savedApiKey && apiKeyModal.style.display !== 'none') {
+        apiKeyModal.style.display = 'flex';
+        dispatchBtn.disabled = false;
+        dispatchBtn.innerText = "Dispatch Parallel Agents";
+        return;
+    }
+
+    const eventSource = new EventSource(`http://localhost:8000/api/analyze?api_key=${encodeURIComponent(savedApiKey)}`);
 
     eventSource.onmessage = (event) => {
         const payload = JSON.parse(event.data);
