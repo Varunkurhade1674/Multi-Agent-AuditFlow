@@ -113,28 +113,21 @@ Final Audit Report
 
 ## Project Structure
 
-```bash
+```text
 AuditFlow/
 │
-├── agents/
-│   ├── finance_agent.py
-│   ├── legal_agent.py
-│   ├── operations_agent.py
-│   └── expert_agent.py
+├── backend/
+│   ├── main.py
+│   ├── prompts.py
+│   ├── requirements.txt
+│   └── utils/
+│       └── document_parser.py
 │
-├── engine/
-│   ├── orchestrator.py
-│   ├── conflict_checker.py
-│   └── aggregator.py
+├── frontend/
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
 │
-├── data/
-│
-├── uploads/
-│
-├── reports/
-│
-├── app.py
-├── requirements.txt
 ├── .env
 └── README.md
 ```
@@ -170,7 +163,7 @@ source venv/bin/activate
 ### Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 ```
 
 ## Environment Variables
@@ -188,13 +181,13 @@ Never upload your API keys to GitHub.
 ## Running the Application
 
 ```bash
-streamlit run app.py
+python backend/main.py
 ```
 
 Application will start at:
 
 ```text
-http://localhost:8501
+http://localhost:8001
 ```
 
 ---

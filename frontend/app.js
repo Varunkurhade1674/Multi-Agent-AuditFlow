@@ -74,7 +74,7 @@ function showToast(message) {
 // Validation API call
 async function validateKey(provider, key) {
     try {
-        const response = await fetch('http://localhost:8000/api/validate_key', {
+        const response = await fetch('/api/validate_key', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ provider: provider, api_key: key })
@@ -173,7 +173,7 @@ async function handleFileUpload(file) {
     formData.append('file', file);
 
     try {
-        const response = await fetch('http://localhost:8000/api/upload', {
+        const response = await fetch('/api/upload', {
             method: 'POST',
             body: formData
         });
@@ -221,7 +221,7 @@ dispatchBtn.addEventListener('click', () => {
         return;
     }
 
-    const eventSource = new EventSource(`http://localhost:8000/api/analyze?api_key=${encodeURIComponent(savedApiKey)}`);
+    const eventSource = new EventSource(`/api/analyze?api_key=${encodeURIComponent(savedApiKey)}`);
 
     eventSource.onmessage = (event) => {
         const payload = JSON.parse(event.data);
